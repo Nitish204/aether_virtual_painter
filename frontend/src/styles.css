@@ -1,0 +1,51 @@
+:root {
+  --bg: #0B0E14;
+  --surface: #10141F;
+  --surface-2: #161B29;
+  --border: #232A3B;
+  --text: #E6E8EF;
+  --muted: #7A8299;
+  --cyan: #5EEAD4;
+  --violet: #A78BFA;
+  --amber: #FFB000;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+}
+
+body {
+  background:
+    radial-gradient(circle at 15% 0%, rgba(94,234,212,0.06), transparent 40%),
+    radial-gradient(circle at 85% 10%, rgba(167,139,250,0.06), transparent 40%),
+    var(--bg);
+}
+
+h1, h2, h3, h4 { font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.01em; margin: 0; }
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+button { font-family: inherit; cursor: pointer; }
+
+/* one orchestrated entrance moment on load — the hero and both columns
+   stagger in together, rather than scattering fade-ups on every element */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise-in { animation: riseIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.pulse-dot { animation: pulse 1.6s ease-in-out infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { animation: spin 0.9s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
