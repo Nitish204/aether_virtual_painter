@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -21,6 +22,27 @@ class Settings(BaseSettings):
     # stop one user from filling the database with oversized uploads.
     # ~2MB base64 (~1.5MB raw PNG) is generous for a 640x480 canvas.
     max_drawing_base64_bytes: int = 2 * 1024 * 1024
+
+    @field_validator("database_url")
+    @classmethod
+    def _ensure_async_driver(cls, v: str) -> str:
+        """
+        Neon (and most hosts) give you a connection string starting with
+        plain "postgresql://", which is the SYNC driver format. This app
+        uses SQLAlchemy's async engine, which needs "postgresql+asyncpg://"
+        specifically — without the "+asyncpg" part, SQLAlchemy silently
+        falls back to trying to import psycopg2 (the sync driver), which
+        isn't installed, and crashes on startup with a confusing
+        "No module named 'psycopg2'" error that doesn't obviously point
+        back to "your DATABASE_URL is in the wrong format". This
+        normalizes it automatically so pasting Neon's connection string
+        as-is just works, instead of silently requiring a manual edit.
+        """
+        if v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+        return v
 
     class Config:
         env_file = ".env"
