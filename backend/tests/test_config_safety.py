@@ -39,6 +39,42 @@ def test_sqlite_url_is_left_alone():
     assert s.database_url == "sqlite+aiosqlite:///./x.db"
 
 
+def test_sslmode_query_param_is_converted_to_ssl():
+    """
+    Regression test for a real deploy failure: Neon's dashboard gave a
+    "sslmode=require" query param (psycopg2's name for it), but
+    asyncpg.connect() has no "sslmode" parameter at all — confirmed
+    directly against its function signature — only "ssl". Passing
+    "sslmode" through crashed with "connect() got an unexpected keyword
+    argument 'sslmode'" on every boot attempt.
+    """
+    s = Settings(database_url="postgresql://u:p@host.neon.tech/db?sslmode=require")
+    assert s.database_url == "postgresql+asyncpg://u:p@host.neon.tech/db?ssl=require"
+
+
+def test_already_correct_ssl_param_is_left_alone():
+    s = Settings(database_url="postgresql+asyncpg://u:p@host/db?ssl=require")
+    assert s.database_url == "postgresql+asyncpg://u:p@host/db?ssl=require"
+
+
+def test_channel_binding_param_is_stripped():
+    """
+    Regression test for a real deploy failure: Neon's dashboard gave a
+    connection string with BOTH "sslmode=require" AND
+    "channel_binding=require". The first fix renamed "sslmode" to "ssl"
+    but didn't account for "channel_binding" — another libpq-only
+    parameter with no asyncpg equivalent at all (confirmed against
+    asyncpg.connect()'s actual signature) — so the crash just moved to
+    a different unexpected keyword argument instead of being fixed.
+    This is exactly why the fix now uses an allow-list instead of
+    renaming known-bad names one at a time: any parameter that isn't in
+    _ASYNCPG_ALLOWED_QUERY_PARAMS gets dropped, regardless of what it's
+    called or whether this specific test anticipated it.
+    """
+    s = Settings(database_url="postgresql://u:p@host.neon.tech/db?sslmode=require&channel_binding=require")
+    assert s.database_url == "postgresql+asyncpg://u:p@host.neon.tech/db?ssl=require"
+
+
 def test_development_settings_are_never_rejected():
     """The guard must stay out of the way entirely outside production —
     local dev and CI both rely on the SQLite + dev-secret defaults."""
