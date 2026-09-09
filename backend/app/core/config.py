@@ -1,6 +1,14 @@
 from functools import lru_cache
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+# Query string parameters asyncpg.connect() actually accepts. Anything
+# else in a DATABASE_URL's query string gets dropped by
+# Settings._ensure_async_driver rather than passed through — see that
+# validator's docstring for why.
+_ASYNCPG_ALLOWED_QUERY_PARAMS = {"ssl", "timeout", "server_settings", "target_session_attrs"}
 
 
 class Settings(BaseSettings):
@@ -23,25 +31,56 @@ class Settings(BaseSettings):
     # ~2MB base64 (~1.5MB raw PNG) is generous for a 640x480 canvas.
     max_drawing_base64_bytes: int = 2 * 1024 * 1024
 
+    # Query string parameters asyncpg.connect() actually accepts.
+    # Anything else in the URL's query string gets dropped rather than
+    # passed through — see _ensure_async_driver for why.
+
     @field_validator("database_url")
     @classmethod
     def _ensure_async_driver(cls, v: str) -> str:
         """
-        Neon (and most hosts) give you a connection string starting with
-        plain "postgresql://", which is the SYNC driver format. This app
-        uses SQLAlchemy's async engine, which needs "postgresql+asyncpg://"
-        specifically — without the "+asyncpg" part, SQLAlchemy silently
-        falls back to trying to import psycopg2 (the sync driver), which
-        isn't installed, and crashes on startup with a confusing
-        "No module named 'psycopg2'" error that doesn't obviously point
-        back to "your DATABASE_URL is in the wrong format". This
-        normalizes it automatically so pasting Neon's connection string
-        as-is just works, instead of silently requiring a manual edit.
+        Neon's dashboard connection strings vary by which driver/framework
+        tab you copy from, and can include parameters this app's driver
+        doesn't understand at all:
+
+        1. Scheme: plain "postgresql://" is the SYNC driver scheme. This
+           app's async engine needs "postgresql+asyncpg://" explicitly —
+           without it, SQLAlchemy defaults to importing psycopg2 (not
+           installed here) and crashes on startup.
+
+        2. Query params: psycopg2-style params like "sslmode=require" and
+           "channel_binding=require" are libpq-level options with no
+           asyncpg equivalent — confirmed directly against asyncpg's own
+           connect() signature, neither exists as a parameter there at
+           all. Passing either through crashes with "connect() got an
+           unexpected keyword argument". Renaming "sslmode" to "ssl"
+           fixed the first case, but Neon can (and did) add further
+           params like "channel_binding" that have no asyncpg
+           equivalent to rename to — so rather than chase each new
+           parameter name one at a time, this now uses an explicit
+           allow-list: only params asyncpg's connect() actually accepts
+           survive, everything else is dropped silently. TLS itself
+           isn't lost by dropping these — asyncpg negotiates TLS with
+           Neon automatically; these params were only ever about
+           certificate verification strictness, not whether TLS happens
+           at all.
         """
         if v.startswith("postgresql://"):
-            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
-        if v.startswith("postgres://"):
-            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgres://"):
+            v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+
+        if "+asyncpg" in v and "?" in v:
+            parts = urlsplit(v)
+            query_pairs = parse_qsl(parts.query, keep_blank_values=True)
+            cleaned = []
+            for key, val in query_pairs:
+                if key == "sslmode":
+                    key = "ssl"
+                if key in _ASYNCPG_ALLOWED_QUERY_PARAMS:
+                    cleaned.append((key, val))
+            v = urlunsplit(parts._replace(query=urlencode(cleaned)))
+
         return v
 
     class Config:
