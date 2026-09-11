@@ -2,10 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { apiFetch } from "../utils/api";
 
-const FRAME_W = 640;
-const FRAME_H = 480;
+// Used only as the initial canvas size before the camera actually
+// starts (there's a brief moment before we know the real negotiated
+// resolution). The real dimensions come from the video track itself
+// once it's live — see DEFAULT_DIMS usage below.
+const DEFAULT_DIMS = { w: 640, h: 480 };
 const MAX_HISTORY = 25;
-const RAISE_THRESHOLD = 0.06; // normalized (0-1) landmark units, ~ the 40px threshold at 640x480
+const RAISE_THRESHOLD = 0.06; // normalized (0-1) landmark units — resolution-independent by design, see below
 
 const WASM_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17/wasm";
 const MODEL_URL =
@@ -22,7 +25,10 @@ const HAND_CONNECTIONS = [
 
 // Same check as the fixed Python `finger_raised()`: a fingertip counts as
 // "raised" only if it's meaningfully above its own knuckle, not just
-// technically higher by a pixel.
+// technically higher by a pixel. Using a normalized (0-1) threshold
+// rather than a fixed pixel count means this works identically whether
+// the camera negotiated 640x480 or a full 1080p feed — a pixel-based
+// threshold would've needed rescaling for every resolution.
 function fingerRaised(tipY, baseY) {
   return baseY - tipY > RAISE_THRESHOLD;
 }
@@ -35,6 +41,19 @@ function fingerRaised(tipY, baseY) {
  * Gesture rule (matches the fixed Python app, verified there with a unit
  * test): raise only your index finger to draw; raise index + middle to
  * move without drawing.
+ *
+ * Camera resolution: requests HD (1280x720) as a *preference*, not a
+ * hard requirement — using `ideal` in the constraints tells the browser
+ * "get as close to this as the device can," so a laptop webcam that
+ * maxes out at 640x480, a phone camera capable of 1080p, and a proper
+ * HD webcam all get their own best available resolution, rather than
+ * either failing outright (if we required exactly 1280x720) or being
+ * needlessly capped at a low fixed resolution (if we'd left the old
+ * hardcoded 640x480 requirement in place). The actual negotiated
+ * resolution is read back from the live video track once it starts
+ * (videoWidth/videoHeight — see setup()) and everything downstream
+ * (canvases, drawing coordinates, mirroring) adapts to that, not to a
+ * fixed constant.
  */
 export function useHandPainter() {
   const videoRef = useRef(null);
@@ -44,6 +63,11 @@ export function useHandPainter() {
   const [status, setStatus] = useState("loading"); // loading | ready | tracking | idle | error
   const [errorMessage, setErrorMessage] = useState("");
   const [fps, setFps] = useState(0);
+  // Exposed so App.jsx can size the visible canvas/container to match
+  // whatever resolution actually got negotiated, instead of assuming a
+  // fixed aspect ratio that may not match a given device's camera.
+  const [frameSize, setFrameSize] = useState(DEFAULT_DIMS);
+  const dimsRef = useRef(DEFAULT_DIMS); // the hot rAF loop reads this directly, not React state, to avoid stale closures
 
   const toolRef = useRef("draw");
   const colorRef = useRef("#FF3C3C");
@@ -67,13 +91,14 @@ export function useHandPainter() {
   const pushHistory = useCallback(() => {
     const mask = maskCanvasRef.current;
     if (!mask) return;
+    const { w, h } = dimsRef.current;
     const ctx = mask.getContext("2d");
-    const snapshot = ctx.getImageData(0, 0, FRAME_W, FRAME_H);
-    const h = historyRef.current;
-    h.stack = h.stack.slice(0, h.pos + 1);
-    h.stack.push(snapshot);
-    if (h.stack.length > MAX_HISTORY) h.stack.shift();
-    h.pos = h.stack.length - 1;
+    const snapshot = ctx.getImageData(0, 0, w, h);
+    const hist = historyRef.current;
+    hist.stack = hist.stack.slice(0, hist.pos + 1);
+    hist.stack.push(snapshot);
+    if (hist.stack.length > MAX_HISTORY) hist.stack.shift();
+    hist.pos = hist.stack.length - 1;
     setHistoryTick((t) => t + 1);
   }, []);
 
@@ -104,7 +129,8 @@ export function useHandPainter() {
   const clear = useCallback(() => {
     const mask = maskCanvasRef.current;
     if (!mask) return;
-    mask.getContext("2d").clearRect(0, 0, FRAME_W, FRAME_H);
+    const { w, h } = dimsRef.current;
+    mask.getContext("2d").clearRect(0, 0, w, h);
     pushHistory();
   }, [pushHistory]);
 
@@ -168,8 +194,8 @@ export function useHandPainter() {
     let lastFrameTimes = [];
 
     const mask = maskCanvasRef.current;
-    mask.width = FRAME_W;
-    mask.height = FRAME_H;
+    mask.width = DEFAULT_DIMS.w;
+    mask.height = DEFAULT_DIMS.h;
 
     async function setup() {
       try {
@@ -182,8 +208,14 @@ export function useHandPainter() {
           minTrackingConfidence: 0.6,
         });
 
+        // `ideal` (not a hard `min`/exact value) tells the browser "get as
+        // close to HD as this device's camera can do" rather than failing
+        // outright on a device that can't hit exactly 1280x720 — a phone
+        // camera might negotiate higher, an old laptop webcam might only
+        // manage 640x480, and both should work rather than one of them
+        // throwing OverconstrainedError.
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: FRAME_W, height: FRAME_H },
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
         if (cancelled) {
@@ -194,7 +226,21 @@ export function useHandPainter() {
         video.srcObject = stream;
         await video.play();
 
-        pushHistory(); // seed history with the blank canvas
+        // This is the actual negotiated resolution — not what we asked
+        // for, what the device actually delivered. Everything downstream
+        // (canvases, drawing math, mirroring) uses this from here on.
+        const w = video.videoWidth || DEFAULT_DIMS.w;
+        const h = video.videoHeight || DEFAULT_DIMS.h;
+        dimsRef.current = { w, h };
+        setFrameSize({ w, h });
+        mask.width = w;
+        mask.height = h;
+        if (outputCanvasRef.current) {
+          outputCanvasRef.current.width = w;
+          outputCanvasRef.current.height = h;
+        }
+
+        pushHistory(); // seed history with the blank canvas, at the real resolution
         setStatus("ready");
         loop();
       } catch (err) {
@@ -219,15 +265,16 @@ export function useHandPainter() {
         return;
       }
 
+      const { w: W, h: H } = dimsRef.current;
       const t0 = performance.now();
       const outCtx = output.getContext("2d");
       const maskCtx = mask.getContext("2d");
 
       // Mirror the feed so movement feels natural (matches cv2.flip(img, 1)).
       outCtx.save();
-      outCtx.translate(FRAME_W, 0);
+      outCtx.translate(W, 0);
       outCtx.scale(-1, 1);
-      outCtx.drawImage(video, 0, 0, FRAME_W, FRAME_H);
+      outCtx.drawImage(video, 0, 0, W, H);
       outCtx.restore();
 
       const nowMs = performance.now();
@@ -242,21 +289,21 @@ export function useHandPainter() {
         outCtx.lineWidth = 1;
         for (const [a, b] of HAND_CONNECTIONS) {
           outCtx.beginPath();
-          outCtx.moveTo(FRAME_W - hand[a].x * FRAME_W, hand[a].y * FRAME_H);
-          outCtx.lineTo(FRAME_W - hand[b].x * FRAME_W, hand[b].y * FRAME_H);
+          outCtx.moveTo(W - hand[a].x * W, hand[a].y * H);
+          outCtx.lineTo(W - hand[b].x * W, hand[b].y * H);
           outCtx.stroke();
         }
         outCtx.fillStyle = "#A78BFA";
         for (const lm of hand) {
           outCtx.beginPath();
-          outCtx.arc(FRAME_W - lm.x * FRAME_W, lm.y * FRAME_H, 2, 0, Math.PI * 2);
+          outCtx.arc(W - lm.x * W, lm.y * H, 2, 0, Math.PI * 2);
           outCtx.fill();
         }
 
-        const x = FRAME_W - hand[8].x * FRAME_W;
-        const y = hand[8].y * FRAME_H;
+        const x = W - hand[8].x * W;
+        const y = hand[8].y * H;
         const y5 = hand[5].y;
-        const xi = FRAME_W - hand[12].x * FRAME_W;
+        const xi = W - hand[12].x * W;
         const yi = hand[12].y;
         const y9 = hand[9].y;
 
@@ -360,7 +407,7 @@ export function useHandPainter() {
 
   return {
     videoRef, outputCanvasRef, maskCanvasRef,
-    status, errorMessage, fps,
+    status, errorMessage, fps, frameSize,
     tool, setTool, color, setColor, thickness, setThickness,
     undo, redo, clear, downloadPainting, saveToCloud, saveState,
     canUndo, canRedo, historyTick,
