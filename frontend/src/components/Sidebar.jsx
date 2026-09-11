@@ -37,6 +37,7 @@ export default function Sidebar({
   tool, setTool, color, setColor, thickness, setThickness,
   undo, redo, clear, canUndo, canRedo, downloadPainting, canDownload,
   saveToCloud, saveState, onOpenGallery, user, onLogout,
+  inputMode, setInputMode,
 }) {
   return (
     <div
@@ -57,6 +58,39 @@ export default function Sidebar({
           </button>
         </div>
       )}
+
+      <Label>Input Method</Label>
+      <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+        <button
+          onClick={() => setInputMode("hand")}
+          className="mono"
+          style={{
+            flex: 1, padding: "8px 6px", borderRadius: 8, fontSize: "0.75rem",
+            border: `1px solid ${inputMode === "hand" ? "var(--cyan)" : "var(--border)"}`,
+            background: inputMode === "hand" ? "var(--surface-2)" : "transparent",
+            color: inputMode === "hand" ? "var(--cyan)" : "var(--text)",
+          }}
+        >
+          ✋ Hand Gestures
+        </button>
+        <button
+          onClick={() => setInputMode("pointer")}
+          className="mono"
+          style={{
+            flex: 1, padding: "8px 6px", borderRadius: 8, fontSize: "0.75rem",
+            border: `1px solid ${inputMode === "pointer" ? "var(--cyan)" : "var(--border)"}`,
+            background: inputMode === "pointer" ? "var(--surface-2)" : "transparent",
+            color: inputMode === "pointer" ? "var(--cyan)" : "var(--text)",
+          }}
+        >
+          🖱 Mouse / Touch
+        </button>
+      </div>
+      <div className="mono" style={{ fontSize: "0.68rem", color: "var(--muted)", lineHeight: 1.5 }}>
+        Hand tracking depends on the camera correctly identifying finger
+        positions, which doesn't work equally well for every hand. Switch
+        to Mouse/Touch any time to draw directly instead.
+      </div>
 
       <Label>Tool</Label>
       {/* Sliding active-tool indicator: a single moving pill behind
@@ -144,9 +178,10 @@ export default function Sidebar({
       <Label>How it works</Label>
       <div className="mono" style={{ fontSize: "0.78rem", color: "var(--muted)", lineHeight: 1.7 }}>
         1. Allow camera access above<br />
-        2. Raise <b style={{ color: "var(--cyan)" }}>only your index finger</b> to draw<br />
-        3. Raise index + middle to move without drawing<br />
-        4. Pick tool / color / thickness here anytime
+        2. Raise <b style={{ color: "var(--cyan)" }}>any one finger</b> (not the thumb) to draw<br />
+        3. Raise two or more fingers to move without drawing<br />
+        4. Not working well for your hand? Switch to Mouse/Touch above<br />
+        5. Pick tool / color / thickness here anytime
       </div>
     </div>
   );
