@@ -91,7 +91,16 @@ function Painter({ user, onLogout, onOpenGallery }) {
               muted
               style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none", top: 0, left: 0 }}
             />
-            <canvas ref={p.outputCanvasRef} width={p.frameSize?.w || DEFAULT_FRAME_W} height={p.frameSize?.h || DEFAULT_FRAME_H} style={{ width: "100%", height: "100%", display: "block" }} />
+            <canvas
+              ref={p.outputCanvasRef}
+              width={p.frameSize?.w || DEFAULT_FRAME_W}
+              height={p.frameSize?.h || DEFAULT_FRAME_H}
+              style={{ width: "100%", height: "100%", display: "block", touchAction: "none", cursor: p.inputMode === "pointer" ? "crosshair" : "default" }}
+              onPointerDown={p.handlePointerDown}
+              onPointerMove={p.handlePointerMove}
+              onPointerUp={p.handlePointerUp}
+              onPointerLeave={p.handlePointerUp}
+            />
             <canvas ref={p.maskCanvasRef} style={{ display: "none" }} />
 
             {p.status === "loading" && <Overlay><Spinner /><span>Loading hand-tracking model...</span></Overlay>}
@@ -120,6 +129,7 @@ function Painter({ user, onLogout, onOpenGallery }) {
           downloadPainting={p.downloadPainting} canDownload={p.status !== "loading" && p.status !== "error"}
           saveToCloud={p.saveToCloud} saveState={p.saveState}
           onOpenGallery={onOpenGallery} user={user} onLogout={onLogout}
+          inputMode={p.inputMode} setInputMode={p.setInputMode}
         />
       </div>
 
