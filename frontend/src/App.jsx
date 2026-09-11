@@ -6,8 +6,11 @@ import { apiFetch } from "./utils/api";
 import AuthPage from "./pages/AuthPage";
 import Gallery from "./pages/Gallery";
 
-const FRAME_W = 640;
-const FRAME_H = 480;
+// Fallback only, used for the very first paint before the camera
+// reports its real negotiated resolution (p.frameSize from the hook
+// below then takes over — see the canvas/container sizing further down).
+const DEFAULT_FRAME_W = 640;
+const DEFAULT_FRAME_H = 480;
 
 export default function App() {
   const [user, setUser] = useState(undefined); // undefined = checking, null = signed out, object = signed in
@@ -68,7 +71,7 @@ function Painter({ user, onLogout, onOpenGallery }) {
 
       <div className="rise-in" style={{ animationDelay: "0.08s", display: "flex", gap: 24, alignItems: "flex-start" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ position: "relative", width: "100%", maxWidth: FRAME_W, aspectRatio: `${FRAME_W} / ${FRAME_H}`, borderRadius: 14, overflow: "hidden", border: "1px solid var(--border)", background: "#000" }}>
+          <div style={{ position: "relative", width: "100%", maxWidth: p.frameSize?.w || DEFAULT_FRAME_W, aspectRatio: `${p.frameSize?.w || DEFAULT_FRAME_W} / ${p.frameSize?.h || DEFAULT_FRAME_H}`, borderRadius: 14, overflow: "hidden", border: "1px solid var(--border)", background: "#000" }}>
             {/* Bug fix: `display: "none"` removes an element from the
                 render tree entirely, and in a lot of browsers (Chrome
                 and Safari both do this) a <video> element that isn't
@@ -88,7 +91,7 @@ function Painter({ user, onLogout, onOpenGallery }) {
               muted
               style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none", top: 0, left: 0 }}
             />
-            <canvas ref={p.outputCanvasRef} width={FRAME_W} height={FRAME_H} style={{ width: "100%", height: "100%", display: "block" }} />
+            <canvas ref={p.outputCanvasRef} width={p.frameSize?.w || DEFAULT_FRAME_W} height={p.frameSize?.h || DEFAULT_FRAME_H} style={{ width: "100%", height: "100%", display: "block" }} />
             <canvas ref={p.maskCanvasRef} style={{ display: "none" }} />
 
             {p.status === "loading" && <Overlay><Spinner /><span>Loading hand-tracking model...</span></Overlay>}
@@ -99,6 +102,9 @@ function Painter({ user, onLogout, onOpenGallery }) {
             </div>
             <div className="mono" style={{ position: "absolute", left: 12, bottom: 38, fontSize: "0.65rem", color: "#ccc", background: "rgba(0,0,0,0.4)", padding: "2px 8px", borderRadius: 6 }}>
               {p.fps} FPS
+            </div>
+            <div className="mono" style={{ position: "absolute", right: 12, bottom: 12, fontSize: "0.65rem", color: "#ccc", background: "rgba(0,0,0,0.4)", padding: "2px 8px", borderRadius: 6 }}>
+              {p.frameSize ? `${p.frameSize.w}×${p.frameSize.h}` : "..."}
             </div>
           </div>
         </div>
