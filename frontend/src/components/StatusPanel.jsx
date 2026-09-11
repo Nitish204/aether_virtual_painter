@@ -20,8 +20,12 @@ function Panel({ label, children }) {
 
 export default function StatusPanel({ status, fps, tool, thickness, color }) {
   const isTracking = status === "tracking";
-  const statusText = status === "tracking" ? "TRACKING" : status === "ready" ? "IDLE" : status === "error" ? "ERROR" : "STARTING";
-  const statusColor = status === "tracking" ? "var(--cyan)" : status === "error" ? "#ff6b5c" : "var(--muted)";
+  const statusText =
+    status === "tracking" ? "TRACKING" :
+    status === "pointer" ? "MOUSE/TOUCH" :
+    status === "ready" ? "IDLE" :
+    status === "error" ? "ERROR" : "STARTING";
+  const statusColor = (status === "tracking" || status === "pointer") ? "var(--cyan)" : status === "error" ? "#ff6b5c" : "var(--muted)";
 
   return (
     <div style={{ width: 260, flexShrink: 0 }}>
