@@ -1,4 +1,3 @@
-// File location: frontend/src/pages/AuthPage.jsx
 import { useState } from "react";
 import { apiFetch } from "../utils/api";
 
