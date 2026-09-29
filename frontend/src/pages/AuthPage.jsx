@@ -1,3 +1,4 @@
+// File location: frontend/src/pages/AuthPage.jsx
 import { useState } from "react";
 import { apiFetch } from "../utils/api";
 
@@ -5,6 +6,7 @@ export default function AuthPage({ onAuthenticated }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -50,10 +52,25 @@ export default function AuthPage({ onAuthenticated }) {
         />
 
         <label className="mono" style={{ fontSize: "0.72rem", color: "var(--muted)", textTransform: "uppercase", marginTop: 12, display: "block" }}>Password</label>
-        <input
-          type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)}
-          style={inputStyle}
-        />
+        <div style={{ position: "relative" }}>
+          <input
+            type={showPassword ? "text" : "password"} required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)}
+            style={{ ...inputStyle, paddingRight: 40 }}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            className="mono"
+            style={{
+              position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+              background: "none", border: "none", color: "var(--muted)", fontSize: "0.72rem",
+              cursor: "pointer", padding: "4px 6px",
+            }}
+          >
+            {showPassword ? "Hide" : "Show"}
+          </button>
+        </div>
 
         {error && (
           <div className="mono" style={{ marginTop: 12, fontSize: "0.78rem", color: "#ff6b5c" }}>{error}</div>
